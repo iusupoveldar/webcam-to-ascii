@@ -1,111 +1,145 @@
+/* Reset some default styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
 body {
-    margin: 0;
-    font-family: system-ui, sans-serif;
-    background-color: #000; /* Dark theme by default */
-    color: #eee;
-  }
-  
-  .layout {
-    display: flex;
-    height: 100vh;
-  }
-  
-  /* Increase sidebar width to fit labels and numeric values */
-  .sidebar {
-    width: 380px;
-    flex-shrink: 0;
-    background: #111; /* Matches dark theme */
-    color: #eee;
-    padding: 20px;
-    box-sizing: border-box;
-    overflow-y: auto;
-    position: fixed;
-    top: 0;
-    bottom: 0;
-    left: 0;
-  }
-  
-  .sidebar h3 {
-    margin: 10px 0;
-    font-size: 1.1rem;
-  }
-  
-  .control-group {
-    margin-bottom: 20px;
-    border-bottom: 1px solid #666;
-    padding-bottom: 10px;
-  }
-  
-  .control-group:last-of-type {
-    border-bottom: none;
-  }
-  
-  .control {
-    display: flex;
-    align-items: center;
-    margin: 8px 0;
-  }
-  
-  .control label {
-    flex: 0 0 150px;
-    margin-right: 10px;
-    font-size: 0.9rem;
-    white-space: nowrap;
-  }
-  
-  .control input[type="range"],
-  .control select,
-  .control input[type="text"] {
-    flex: 1;
-  }
-  
-  .value-label {
-    display: inline-block;
-    width: 40px;
-    text-align: center;
-    margin-left: 8px;
-    font-size: 0.9rem;
-  }
-  
-  .main-content {
-    flex: 1;
-    margin-left: 380px;
-    padding: 20px;
-    overflow-y: auto;
-    background: #000;
-    color: #eee;
-    box-sizing: border-box;
-  }
-  
-  #ascii-art {
-    background: #000;
-    padding: 10px;
-    white-space: pre;
-    font-family: Consolas, Monaco, "Liberation Mono", monospace;
-    font-size: 7px;
-    line-height: 7px;
-  }
-  
-  button {
-    margin-right: 10px;
-    padding: 5px 10px;
-  }
-  
-  body.light-mode {
-    background-color: #fff;
-    color: #000;
-  }
-  
-  body.light-mode .sidebar {
-    background: #F4F4F4;
-    color: #000;
-  }
-  
-  body.light-mode .main-content {
-    background: #fff;
-    color: #000;
-  }
-  
-  body.light-mode #ascii-art {
-    background: #fff;
-  }
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  background-color: #222;
+  color: #eee;
+  line-height: 1.5;
+  overflow: hidden;
+}
+
+/* Light theme override */
+body.light-mode {
+  background-color: #f4f4f4;
+  color: #333;
+}
+
+/* Layout */
+.layout {
+  display: flex;
+  height: 100vh;
+}
+
+/* Sidebar styling */
+.sidebar {
+  width: 300px;
+  background: rgba(0, 0, 0, 0.85);
+  padding: 20px;
+  overflow-y: auto;
+  color: #fff;
+}
+
+body.light-mode .sidebar {
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.sidebar h2 {
+  text-align: center;
+  margin-bottom: 20px;
+  font-size: 1.8em;
+}
+
+.control-group {
+  margin-bottom: 20px;
+}
+
+.control-group h3 {
+  margin-bottom: 10px;
+  border-bottom: 1px solid #555;
+  padding-bottom: 5px;
+  font-size: 1.2em;
+}
+
+.control {
+  margin-bottom: 10px;
+}
+
+.control label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.control input[type="range"],
+.control select,
+.control input[type="text"],
+.control input[type="checkbox"] {
+  width: 100%;
+  padding: 5px;
+  font-size: 1em;
+}
+
+.value-label {
+  float: right;
+  font-size: 0.9em;
+  margin-top: -25px;
+  margin-right: 5px;
+  color: #ccc;
+}
+
+/* Webcam video */
+.video-container {
+  text-align: center;
+}
+
+.video-container video {
+  width: 100%;
+  border: 2px solid #555;
+  border-radius: 4px;
+}
+
+/* Main content styling */
+.main-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  background: #111;
+}
+
+body.light-mode .main-content {
+  background: #fff;
+}
+
+#ascii-art {
+  white-space: pre;
+  font-family: 'Courier New', Courier, monospace;
+  font-size: 7px;
+  line-height: 7px;
+  overflow: auto;
+  max-height: calc(100vh - 80px);
+  padding: 10px;
+  background: #000;
+  color: #0f0;
+  border: 2px solid #333;
+  border-radius: 4px;
+}
+
+body.light-mode #ascii-art {
+  background: #eee;
+  color: #333;
+}
+
+.action-buttons {
+  margin-top: 10px;
+  text-align: center;
+}
+
+.action-buttons button {
+  margin: 0 10px;
+  padding: 10px 20px;
+  font-size: 1em;
+  cursor: pointer;
+  border: none;
+  border-radius: 4px;
+  background: #0088cc;
+  color: #fff;
+  transition: background 0.3s ease;
+}
+
+.action-buttons button:hover {
+  background: #006699;
+}

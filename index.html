@@ -1,15 +1,16 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Webcam Example</title>
-    <link rel="stylesheet" href="style.css">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Webcam ASCII Art</title>
+  <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-<div class="layout">
+  <div class="layout">
     <aside class="sidebar">
-      <section class="control-group global-settings">
+      <h2>ASCII Art Studio</h2>
+      <section class="control-group">
         <h3>Global Settings</h3>
         <div class="control">
           <label for="theme">Theme:</label>
@@ -24,27 +25,19 @@
         </div>
       </section>
       
-      <section class="control-group upload-group">
-        <h3>1. Upload Your File</h3>
-        <div class="control">
-          <input type="file" id="upload" accept="image/*">
-        </div>
-      </section>
-
-      <section class="control-group upload-group">
-        <h3>1. Webcam Input</h3>
-        <div class="control">
-            <video id="webcam" autoplay></video>
-            <button id="captureBtn">Capture Image</button>
+      <section class="control-group">
+        <h3>Webcam Input</h3>
+        <div class="control video-container">
+          <video id="webcam" autoplay playsinline muted></video>
         </div>
       </section>
       
-      <section class="control-group image-processing">
-        <h3>2. Basic Adjustments</h3>
+      <section class="control-group">
+        <h3>Basic Adjustments</h3>
         <div class="control">
           <label for="asciiWidth">Output Width (chars):</label>
           <input type="range" id="asciiWidth" min="20" max="300" value="150">
-          <span class="value-label" id="asciiWidthVal">100</span>
+          <span class="value-label" id="asciiWidthVal">150</span>
         </div>
         <div class="control">
           <label for="brightness">Brightness:</label>
@@ -67,8 +60,8 @@
         </div>
       </section>
       
-      <section class="control-group dithering-settings">
-        <h3>3. Dithering Options</h3>
+      <section class="control-group">
+        <h3>Dithering Options</h3>
         <div class="control">
           <label for="dithering">Enable Dithering:</label>
           <input type="checkbox" id="dithering" checked>
@@ -84,8 +77,8 @@
         </div>
       </section>
       
-      <section class="control-group charset-settings">
-        <h3>4. Character Set</h3>
+      <section class="control-group">
+        <h3>Character Set</h3>
         <div class="control">
           <label for="charset">Select Set:</label>
           <select id="charset">
@@ -103,9 +96,8 @@
         </div>
       </section>
       
-      <section class="control-group edge-detection-settings">
-        <h3>5. Edge Detection</h3>
-        <p>Select one edge detection method:</p>
+      <section class="control-group">
+        <h3>Edge Detection</h3>
         <div class="control">
           <input type="radio" name="edgeMethod" id="edgeNone" value="none" checked>
           <label for="edgeNone">No Edge Detection</label>
@@ -130,8 +122,8 @@
         </div>
       </section>
       
-      <section class="control-group display-settings">
-        <h3>6. Display Settings</h3>
+      <section class="control-group">
+        <h3>Display Settings</h3>
         <div class="control">
           <label for="zoom">Zoom (%):</label>
           <input type="range" id="zoom" min="20" max="600" value="100">
@@ -139,7 +131,7 @@
         </div>
       </section>
       
-      <section class="control-group misc-settings">
+      <section class="control-group">
         <div class="control">
           <button id="reset">Reset All Settings</button>
         </div>
@@ -148,13 +140,14 @@
     
     <main class="main-content">
       <pre id="ascii-art"></pre>
-      <button id="copyBtn">Copy ASCII Art</button>
-      <button id="downloadBtn">Download PNG</button>
+      <div class="action-buttons">
+        <button id="copyBtn">Copy ASCII Art</button>
+        <button id="downloadBtn">Download PNG</button>
+      </div>
     </main>
   </div>
+  <!-- Hidden canvas used for processing -->
   <canvas id="canvas" style="display: none;"></canvas>
   <script src="main.js"></script>
-
-  
 </body>
 </html>
