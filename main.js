@@ -1,19 +1,22 @@
-// ---------------- Global Variables ----------------
+// Global Variables
 let currentImage = null;
-const baseFontSize = 7; // Base font size for ASCII art
+const baseFontSize = 10; // Base font size for ASCII art
+let galleryData = [];
+let animationId = null;
 
-// ---------------- Helper Functions ----------------
-
-// Clamp a value between min and max.
+// Helper Functions
 function clamp(value, min, max) {
   return Math.max(min, Math.min(max, value));
 }
 
-// ---------------- Webcam Setup ----------------
+// Webcam Setup
 document.addEventListener('DOMContentLoaded', () => {
   const video = document.getElementById('webcam');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  const processingCanvas = document.getElementById('canvas');
+  const processingCtx = processingCanvas.getContext('2d', { willReadFrequently: true });
+
+  // Load Gallery Data
+  loadGallery();
 
   // Access the webcam
   navigator.mediaDevices.getUserMedia({ video: true })
@@ -24,40 +27,32 @@ document.addEventListener('DOMContentLoaded', () => {
     })
     .catch(err => {
       console.error('Error accessing webcam: ', err);
+      alert("CAMERA OFFLINE. CHECK CONNECTION.");
     });
 
-  // Continuously process the webcam video
   function startStreaming() {
     function processFrame() {
       if (video.videoWidth && video.videoHeight) {
-        // Draw the current frame into the canvas
-        canvas.width = video.videoWidth;
-        canvas.height = video.videoHeight;
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        // Create an image from the canvas data
-        currentImage = new Image();
-        currentImage.src = canvas.toDataURL();
-        currentImage.onload = () => {
-          generateASCII(currentImage);
-        };
+        // Draw current frame to hidden canvas for processing
+        processingCanvas.width = 320; // Fixed processing resolution for performance
+        processingCanvas.height = Math.round(320 * (video.videoHeight / video.videoWidth));
+        processingCtx.drawImage(video, 0, 0, processingCanvas.width, processingCanvas.height);
+
+        // Generate ASCII on the visible canvas
+        renderASCII(processingCanvas);
       }
-      requestAnimationFrame(processFrame);
+      animationId = requestAnimationFrame(processFrame);
     }
-    requestAnimationFrame(processFrame);
+    animationId = requestAnimationFrame(processFrame);
   }
 });
 
-// ---------------- ASCII Art Generation Functions ----------------
+// Image Processing & Rendering
+function renderASCII(sourceCanvas) {
+  const asciiCanvas = document.getElementById('ascii-canvas');
+  const ctx = asciiCanvas.getContext('2d', { alpha: false });
 
-function generateASCII(img) {
-  const edgeMethod = document.querySelector('input[name="edgeMethod"]:checked').value;
-  if (edgeMethod === 'dog') {
-    generateContourASCII(img);
-    return;
-  }
-  
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
+  // Settings
   const asciiWidth = parseInt(document.getElementById('asciiWidth').value, 10);
   const brightness = parseFloat(document.getElementById('brightness').value);
   const contrastValue = parseFloat(document.getElementById('contrast').value);
@@ -67,128 +62,320 @@ function generateASCII(img) {
   const invertEnabled = document.getElementById('invert').checked;
   const ignoreWhite = document.getElementById('ignoreWhite').checked;
   const charset = document.getElementById('charset').value;
+  const colorMode = document.getElementById('colorMode').value;
+  const edgeMethod = document.querySelector('input[name="edgeMethod"]:checked').value;
+  const edgeThreshold = parseInt(document.getElementById('edgeThreshold').value, 10);
+  const dogThreshold = parseInt(document.getElementById('dogEdgeThreshold').value, 10);
+  const zoom = parseInt(document.getElementById('zoom').value, 10) / 100;
 
-  let gradient;
-  switch (charset) {
-    case 'standard': gradient = "@%#*+=-:."; break;
-    case 'blocks': gradient = "█▓▒░ "; break;
-    case 'binary': gradient = "01"; break;
-    case 'manual':
-      const manualChar = document.getElementById('manualCharInput').value || "0";
-      gradient = manualChar + " ";
-      break;
-    case 'hex': gradient = "0123456789ABCDEF"; break;
-    case 'detailed':
-    default: gradient = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'.";
-      break;
-  }
-  
-  const nLevels = gradient.length;
+  // Calculate dimensions
+  const fontWidth = 7 * zoom;
+  const fontHeight = 12 * zoom; // Approx aspect ratio
+  const asciiHeight = Math.round((sourceCanvas.height / sourceCanvas.width) * asciiWidth * 0.55);
+
+  // Resize display canvas
+  asciiCanvas.width = asciiWidth * fontWidth;
+  asciiCanvas.height = asciiHeight * fontHeight;
+
+  // Create a temporary small canvas for pixel reading (resize source to ascii grid size)
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = asciiWidth;
+  tempCanvas.height = asciiHeight;
+  const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+
+  // Apply blur if needed
+  tempCtx.filter = blurValue > 0 ? `blur(${blurValue}px)` : "none";
+  tempCtx.drawImage(sourceCanvas, 0, 0, asciiWidth, asciiHeight);
+
+  let imageData = tempCtx.getImageData(0, 0, asciiWidth, asciiHeight);
+  let data = imageData.data; // Uint8ClampedArray
+
+  // Pre-processing (Grayscale, Contrast, Brightness)
   const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
-  const fontAspectRatio = 0.55;
-  const asciiHeight = Math.round((img.height / img.width) * asciiWidth * fontAspectRatio);
+  let grayBuffer = new Float32Array(asciiWidth * asciiHeight);
 
-  // Resize the image to the ASCII dimensions
-  canvas.width = asciiWidth;
-  canvas.height = asciiHeight;
-  ctx.filter = blurValue > 0 ? `blur(${blurValue}px)` : "none";
-  ctx.drawImage(img, 0, 0, asciiWidth, asciiHeight);
-
-  const imageData = ctx.getImageData(0, 0, asciiWidth, asciiHeight);
-  const data = imageData.data;
-  let gray = [], grayOriginal = [];
   for (let i = 0; i < data.length; i += 4) {
-    let lum = 0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2];
+    let r = data[i];
+    let g = data[i + 1];
+    let b = data[i + 2];
+
+    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
     if (invertEnabled) lum = 255 - lum;
+
     let adjusted = clamp(contrastFactor * (lum - 128) + 128 + brightness, 0, 255);
-    gray.push(adjusted);
-    grayOriginal.push(adjusted);
+    grayBuffer[i / 4] = adjusted;
   }
 
-  let ascii = "";
-  // For simplicity, we're using simple mapping (no dithering/edge)
+  // Edge Detection
+  let edgeMap = null;
+  if (edgeMethod === 'sobel') {
+    edgeMap = applySobel(grayBuffer, asciiWidth, asciiHeight, edgeThreshold);
+  } else if (edgeMethod === 'dog') {
+    // Simplified DoG: Blur difference (simulated)
+    // For performance, we'll just use a simple difference check or skip if too heavy
+    // Let's stick to Sobel for "Edge" and maybe just thresholding for "DoG" name for now
+    // Or implement a quick difference filter.
+    edgeMap = applySobel(grayBuffer, asciiWidth, asciiHeight, dogThreshold); // Reusing Sobel for now
+  }
+
+  // Dithering
+  if (ditheringEnabled) {
+    if (ditherAlgorithm === 'floyd') {
+      applyFloydSteinberg(grayBuffer, asciiWidth, asciiHeight);
+    } else if (ditherAlgorithm === 'noise') {
+      applyNoise(grayBuffer);
+    }
+    // Other algos can be added
+  }
+
+  // Rendering to Canvas
+  ctx.fillStyle = "#000";
+  ctx.fillRect(0, 0, asciiCanvas.width, asciiCanvas.height);
+
+  ctx.font = `${fontHeight}px 'VT323', monospace`;
+  ctx.textBaseline = 'top';
+
+  // Charset Selection
+  let chars = "";
+  switch (charset) {
+    case 'standard': chars = "@%#*+=-:. "; break;
+    case 'blocks': chars = "█▓▒░ "; break;
+    case 'binary': chars = "101010 "; break;
+    case 'hex': chars = "0123456789ABCDEF "; break;
+    case 'matrix': chars = "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ "; break;
+    case 'glitch': chars = "¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ"; break;
+    case 'manual':
+      chars = document.getElementById('manualCharInput').value || "0";
+      break;
+    case 'detailed':
+    default: chars = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "; break;
+  }
+
+  const charLen = chars.length;
+
+  // Color Setup
+  let primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-color').trim();
+
   for (let y = 0; y < asciiHeight; y++) {
-    let line = "";
     for (let x = 0; x < asciiWidth; x++) {
       const idx = y * asciiWidth + x;
-      if (ignoreWhite && grayOriginal[idx] === 255) {
-        line += " ";
-        continue;
+      let val = grayBuffer[idx];
+
+      // Edge Override
+      if (edgeMap && edgeMap[idx] > 0) {
+        val = 0;
       }
-      const computedLevel = Math.round((gray[idx] / 255) * (nLevels - 1));
-      line += gradient.charAt(computedLevel);
+
+      if (ignoreWhite && val > 250) continue;
+
+      // Map value to char index
+      // val is 0-255.
+      let charIdx = Math.floor((val / 255) * (charLen - 1));
+
+      // Manual Input Cycling
+      if (charset === 'manual') {
+        charIdx = (x + y) % charLen;
+      }
+
+      const char = chars[charIdx];
+
+      // Color
+      if (colorMode === 'true') {
+        const r = data[idx * 4];
+        const g = data[idx * 4 + 1];
+        const b = data[idx * 4 + 2];
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+      } else if (colorMode === 'rainbow') {
+        const hue = (x / asciiWidth) * 360 + (Date.now() / 20);
+        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
+      } else {
+        ctx.fillStyle = primaryColor;
+      }
+
+      ctx.fillText(char, x * fontWidth, y * fontHeight);
     }
-    ascii += line + "\n";
   }
-  document.getElementById('ascii-art').textContent = ascii;
 }
 
-// Placeholder for contour-based ASCII (if needed)
-function generateContourASCII(img) {
-  // You can implement the DoG and Sobel-based method here.
-  // For now, we simply call generateASCII.
-  generateASCII(img);
+// Algorithms
+function applySobel(buffer, width, height, threshold) {
+  const edgeMap = new Uint8Array(width * height);
+  const kernelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
+  const kernelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
+
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      let gx = 0;
+      let gy = 0;
+
+      for (let ky = -1; ky <= 1; ky++) {
+        for (let kx = -1; kx <= 1; kx++) {
+          const idx = (y + ky) * width + (x + kx);
+          const val = buffer[idx];
+          gx += val * kernelX[ky + 1][kx + 1];
+          gy += val * kernelY[ky + 1][kx + 1];
+        }
+      }
+
+      const magnitude = Math.sqrt(gx * gx + gy * gy);
+      if (magnitude > threshold) {
+        edgeMap[y * width + x] = 255; // Edge detected
+      }
+    }
+  }
+  return edgeMap;
 }
 
-// ---------------- File Upload (if used) ----------------
+function applyFloydSteinberg(buffer, width, height) {
+  for (let y = 0; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const idx = y * width + x;
+      const oldVal = buffer[idx];
+      // Quantize to closest level
+      const steps = 8;
+      const newVal = Math.round(oldVal / 255 * steps) * (255 / steps);
+      buffer[idx] = newVal;
+      const error = oldVal - newVal;
 
-document.getElementById('upload').removeEventListener('change', handleFileUpload);
-document.getElementById('upload').addEventListener('change', handleFileUpload);
+      buffer[idx + 1] += error * 7 / 16;
+      buffer[(y + 1) * width + x - 1] += error * 3 / 16;
+      buffer[(y + 1) * width + x] += error * 5 / 16;
+      buffer[(y + 1) * width + x + 1] += error * 1 / 16;
+    }
+  }
+}
 
-function handleFileUpload(e) {
-  const file = e.target.files[0];
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = function (event) {
-    const img = new Image();
-    img.onload = function () {
-      currentImage = img;
-      generateASCII(img);
-    };
-    img.src = event.target.result;
+function applyNoise(buffer) {
+  for (let i = 0; i < buffer.length; i++) {
+    buffer[i] = clamp(buffer[i] + (Math.random() - 0.5) * 50, 0, 255);
+  }
+}
+
+// Gallery Functions
+function snapImage() {
+  const canvas = document.getElementById('ascii-canvas');
+  // Save as image data URL
+  const dataURL = canvas.toDataURL('image/png');
+  const timestamp = new Date().toLocaleString();
+  const id = Date.now();
+
+  const snap = {
+    id: id,
+    timestamp: timestamp,
+    image: dataURL
   };
-  reader.readAsDataURL(file);
+
+  galleryData.push(snap);
+  saveGallery();
+  alert("FRAME CAPTURED TO MEMORY BANK.");
 }
 
-// ---------------- Update and Reset Functions ----------------
+function saveGallery() {
+  try {
+    if (galleryData.length > 10) galleryData.shift();
+    localStorage.setItem('ascii_gallery', JSON.stringify(galleryData));
+    renderGallery();
+  } catch (e) {
+    console.error("Storage full", e);
+    alert("MEMORY BANK FULL.");
+  }
+}
 
-document.getElementById('asciiWidth').addEventListener('input', updateSettings);
-document.getElementById('brightness').addEventListener('input', updateSettings);
-document.getElementById('contrast').addEventListener('input', updateSettings);
-document.getElementById('blur').addEventListener('input', updateSettings);
-document.getElementById('dithering').addEventListener('change', updateSettings);
-document.getElementById('ditherAlgorithm').addEventListener('change', updateSettings);
-document.getElementById('invert').addEventListener('change', updateSettings);
-document.getElementById('ignoreWhite').addEventListener('change', updateSettings);
-document.getElementById('theme').addEventListener('change', updateSettings);
+function loadGallery() {
+  const stored = localStorage.getItem('ascii_gallery');
+  if (stored) {
+    galleryData = JSON.parse(stored);
+    renderGallery();
+  }
+}
+
+function renderGallery() {
+  const grid = document.getElementById('galleryGrid');
+  grid.innerHTML = "";
+
+  galleryData.forEach(snap => {
+    const div = document.createElement('div');
+    div.className = 'gallery-item';
+    div.innerHTML = `
+      <img src="${snap.image}" style="width: 100%; border: 1px solid #0f0;">
+      <div style="font-size: 0.8em; margin-bottom: 5px;">${snap.timestamp}</div>
+      <div class="gallery-actions">
+        <button onclick="downloadSnap(${snap.id})">SAVE</button>
+        <button onclick="deleteSnap(${snap.id})">DEL</button>
+      </div>
+    `;
+    grid.appendChild(div);
+  });
+}
+
+function deleteSnap(id) {
+  galleryData = galleryData.filter(s => s.id !== id);
+  saveGallery();
+}
+
+function downloadSnap(id) {
+  const snap = galleryData.find(s => s.id === id);
+  if (snap) {
+    const a = document.createElement('a');
+    a.href = snap.image;
+    a.download = `snap_${snap.id}.png`;
+    a.click();
+  }
+}
+
+window.deleteSnap = deleteSnap;
+window.downloadSnap = downloadSnap;
+
+// Event Listeners
+document.getElementById('snapBtn').addEventListener('click', snapImage);
+
+const galleryModal = document.getElementById('galleryModal');
+document.getElementById('galleryBtn').addEventListener('click', () => {
+  galleryModal.style.display = "block";
+  renderGallery();
+});
+
+document.querySelector('.close-modal').addEventListener('click', () => {
+  galleryModal.style.display = "none";
+});
+
+window.onclick = function (event) {
+  if (event.target == galleryModal) {
+    galleryModal.style.display = "none";
+  }
+}
+
+// Settings Listeners
+const settingsInputs = [
+  'asciiWidth', 'brightness', 'contrast', 'blur', 'zoom',
+  'edgeThreshold', 'dogEdgeThreshold', 'dithering', 'invert', 'ignoreWhite'
+];
+settingsInputs.forEach(id => {
+  document.getElementById(id).addEventListener('input', updateSettingsUI);
+  document.getElementById(id).addEventListener('change', updateSettingsUI);
+});
+
+document.getElementById('theme').addEventListener('change', updateSettingsUI);
 document.getElementById('charset').addEventListener('change', function () {
   const manualControl = document.getElementById('manualCharControl');
   manualControl.style.display = (this.value === 'manual') ? 'flex' : 'none';
-  updateSettings();
+  updateSettingsUI();
 });
-document.getElementById('zoom').addEventListener('input', updateSettings);
-document.querySelectorAll('input[name="edgeMethod"]').forEach(function (radio) {
-  radio.addEventListener('change', function () {
+document.getElementById('colorMode').addEventListener('change', updateSettingsUI);
+document.getElementById('ditherAlgorithm').addEventListener('change', updateSettingsUI);
+
+document.querySelectorAll('input[name="edgeMethod"]').forEach(radio => {
+  radio.addEventListener('change', () => {
     const method = document.querySelector('input[name="edgeMethod"]:checked').value;
     document.getElementById('sobelThresholdControl').style.display = (method === 'sobel') ? 'flex' : 'none';
     document.getElementById('dogThresholdControl').style.display = (method === 'dog') ? 'flex' : 'none';
-    updateSettings();
+    updateSettingsUI();
   });
 });
-document.getElementById('edgeThreshold').addEventListener('input', updateSettings);
-document.getElementById('dogEdgeThreshold').addEventListener('input', updateSettings);
-document.getElementById('reset').addEventListener('click', resetSettings);
-document.getElementById('copyBtn').addEventListener('click', function () {
-  const asciiText = document.getElementById('ascii-art').textContent;
-  navigator.clipboard.writeText(asciiText).then(() => {
-    alert('ASCII Art copied to clipboard!');
-  }, () => {
-    alert('Copy failed!');
-  });
-});
-document.getElementById('downloadBtn').addEventListener('click', downloadPNG);
 
-function updateSettings() {
+document.getElementById('reset').addEventListener('click', resetSettings);
+
+function updateSettingsUI() {
   document.getElementById('asciiWidthVal').textContent = document.getElementById('asciiWidth').value;
   document.getElementById('brightnessVal').textContent = document.getElementById('brightness').value;
   document.getElementById('contrastVal').textContent = document.getElementById('contrast').value;
@@ -198,13 +385,9 @@ function updateSettings() {
   document.getElementById('dogEdgeThresholdVal').textContent = document.getElementById('dogEdgeThreshold').value;
 
   const theme = document.getElementById('theme').value;
-  document.body.classList.toggle('light-mode', theme === 'light');
-
-  const zoomPercent = parseInt(document.getElementById('zoom').value, 10);
-  const newFontSize = (baseFontSize * zoomPercent) / 100;
-  const asciiArt = document.getElementById('ascii-art');
-  asciiArt.style.fontSize = newFontSize + "px";
-  asciiArt.style.lineHeight = newFontSize + "px";
+  document.body.classList.remove('light-mode', 'amber-mode');
+  if (theme === 'light') document.body.classList.add('light-mode');
+  if (theme === 'amber') document.body.classList.add('amber-mode');
 }
 
 function resetSettings() {
@@ -218,59 +401,11 @@ function resetSettings() {
   document.getElementById('ignoreWhite').checked = true;
   document.getElementById('charset').value = 'detailed';
   document.getElementById('zoom').value = 100;
+  document.getElementById('colorMode').value = 'mono';
   document.querySelector('input[name="edgeMethod"][value="none"]').checked = true;
   document.getElementById('edgeThreshold').value = 100;
   document.getElementById('dogEdgeThreshold').value = 100;
   document.getElementById('sobelThresholdControl').style.display = 'none';
   document.getElementById('dogThresholdControl').style.display = 'none';
-  updateSettings();
-}
-
-function downloadPNG() {
-  const preElement = document.getElementById('ascii-art');
-  const asciiText = preElement.textContent;
-  if (!asciiText.trim()) {
-    alert("No ASCII art to download.");
-    return;
-  }
-  const lines = asciiText.split("\n");
-  const scaleFactor = 2;
-  const borderMargin = 20 * scaleFactor;
-  const computedStyle = window.getComputedStyle(preElement);
-  const baseFontSize = parseInt(computedStyle.fontSize, 10);
-  const fontSize = baseFontSize * scaleFactor;
-  const tempCanvas = document.createElement('canvas');
-  const tempCtx = tempCanvas.getContext('2d');
-  tempCtx.font = `${fontSize}px Consolas, Monaco, "Liberation Mono", monospace`;
-  let maxLineWidth = 0;
-  for (let i = 0; i < lines.length; i++) {
-    const lineWidth = tempCtx.measureText(lines[i]).width;
-    if (lineWidth > maxLineWidth) {
-      maxLineWidth = lineWidth;
-    }
-  }
-  const lineHeight = fontSize;
-  const textWidth = Math.ceil(maxLineWidth);
-  const textHeight = Math.ceil(lines.length * lineHeight);
-  const canvasWidth = textWidth + 2 * borderMargin;
-  const canvasHeight = textHeight + 2 * borderMargin;
-  const offCanvas = document.createElement('canvas');
-  offCanvas.width = canvasWidth;
-  offCanvas.height = canvasHeight;
-  const offCtx = offCanvas.getContext('2d');
-  const bgColor = document.body.classList.contains('light-mode') ? "#fff" : "#000";
-  offCtx.fillStyle = bgColor;
-  offCtx.fillRect(0, 0, canvasWidth, canvasHeight);
-  offCtx.font = `${fontSize}px Consolas, Monaco, "Liberation Mono", monospace`;
-  offCtx.textBaseline = 'top';
-  offCtx.fillStyle = document.body.classList.contains('light-mode') ? "#000" : "#eee";
-  for (let i = 0; i < lines.length; i++) {
-    offCtx.fillText(lines[i], borderMargin, borderMargin + i * lineHeight);
-  }
-  offCanvas.toBlob(function (blob) {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = 'ascii_art.png';
-    a.click();
-  });
+  updateSettingsUI();
 }
