@@ -1,19 +1,21 @@
+import init, { process_frame } from './pkg/webcam_to_ascii.js';
+
 // Global Variables
 let currentImage = null;
-const baseFontSize = 10; // Base font size for ASCII art
+const baseFontSize = 10;
 let galleryData = [];
 let animationId = null;
 
-// Helper Functions
-function clamp(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
-
 // Webcam Setup
-document.addEventListener('DOMContentLoaded', () => {
+document.addEventListener('DOMContentLoaded', async () => {
+  // Initialize Wasm
+  await init();
+
   const video = document.getElementById('webcam');
   const processingCanvas = document.getElementById('canvas');
   const processingCtx = processingCanvas.getContext('2d', { willReadFrequently: true });
+  const asciiCanvas = document.getElementById('ascii-canvas');
+  const asciiCtx = asciiCanvas.getContext('2d', { alpha: false });
 
   // Load Gallery Data
   loadGallery();
@@ -34,12 +36,39 @@ document.addEventListener('DOMContentLoaded', () => {
     function processFrame() {
       if (video.videoWidth && video.videoHeight) {
         // Draw current frame to hidden canvas for processing
-        processingCanvas.width = 320; // Fixed processing resolution for performance
+        processingCanvas.width = 320;
         processingCanvas.height = Math.round(320 * (video.videoHeight / video.videoWidth));
+        processingCtx.filter = `blur(${parseFloat(document.getElementById('blur').value)}px)`;
         processingCtx.drawImage(video, 0, 0, processingCanvas.width, processingCanvas.height);
+        processingCtx.filter = 'none'; // Reset filter
 
-        // Generate ASCII on the visible canvas
-        renderASCII(processingCanvas);
+        const imageData = processingCtx.getImageData(0, 0, processingCanvas.width, processingCanvas.height);
+
+        // Prepare options
+        const options = {
+          ascii_width: parseInt(document.getElementById('asciiWidth').value, 10),
+          brightness: parseFloat(document.getElementById('brightness').value),
+          contrast: parseFloat(document.getElementById('contrast').value),
+          dithering: document.getElementById('dithering').checked,
+          dither_algo: document.getElementById('ditherAlgorithm').value,
+          invert: document.getElementById('invert').checked,
+          ignore_white: document.getElementById('ignoreWhite').checked,
+          charset: document.getElementById('charset').value,
+          color_mode: document.getElementById('colorMode').value,
+          edge_method: document.querySelector('input[name="edgeMethod"]:checked').value,
+          edge_threshold: parseFloat(document.getElementById('edgeThreshold').value),
+          zoom: parseInt(document.getElementById('zoom').value, 10) / 100,
+          primary_color: getComputedStyle(document.body).getPropertyValue('--primary-color').trim(),
+          manual_char: document.getElementById('manualCharInput').value || "0",
+          is_manual: document.getElementById('charset').value === 'manual'
+        };
+
+        // Call Rust
+        try {
+          process_frame(asciiCtx, processingCanvas.width, processingCanvas.height, imageData.data, options);
+        } catch (e) {
+          console.error("Wasm Error:", e);
+        }
       }
       animationId = requestAnimationFrame(processFrame);
     }
@@ -47,214 +76,9 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 });
 
-// Image Processing & Rendering
-function renderASCII(sourceCanvas) {
-  const asciiCanvas = document.getElementById('ascii-canvas');
-  const ctx = asciiCanvas.getContext('2d', { alpha: false });
-
-  // Settings
-  const asciiWidth = parseInt(document.getElementById('asciiWidth').value, 10);
-  const brightness = parseFloat(document.getElementById('brightness').value);
-  const contrastValue = parseFloat(document.getElementById('contrast').value);
-  const blurValue = parseFloat(document.getElementById('blur').value);
-  const ditheringEnabled = document.getElementById('dithering').checked;
-  const ditherAlgorithm = document.getElementById('ditherAlgorithm').value;
-  const invertEnabled = document.getElementById('invert').checked;
-  const ignoreWhite = document.getElementById('ignoreWhite').checked;
-  const charset = document.getElementById('charset').value;
-  const colorMode = document.getElementById('colorMode').value;
-  const edgeMethod = document.querySelector('input[name="edgeMethod"]:checked').value;
-  const edgeThreshold = parseInt(document.getElementById('edgeThreshold').value, 10);
-  const dogThreshold = parseInt(document.getElementById('dogEdgeThreshold').value, 10);
-  const zoom = parseInt(document.getElementById('zoom').value, 10) / 100;
-
-  // Calculate dimensions
-  const fontWidth = 7 * zoom;
-  const fontHeight = 12 * zoom; // Approx aspect ratio
-  const asciiHeight = Math.round((sourceCanvas.height / sourceCanvas.width) * asciiWidth * 0.55);
-
-  // Resize display canvas
-  asciiCanvas.width = asciiWidth * fontWidth;
-  asciiCanvas.height = asciiHeight * fontHeight;
-
-  // Create a temporary small canvas for pixel reading (resize source to ascii grid size)
-  const tempCanvas = document.createElement('canvas');
-  tempCanvas.width = asciiWidth;
-  tempCanvas.height = asciiHeight;
-  const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
-
-  // Apply blur if needed
-  tempCtx.filter = blurValue > 0 ? `blur(${blurValue}px)` : "none";
-  tempCtx.drawImage(sourceCanvas, 0, 0, asciiWidth, asciiHeight);
-
-  let imageData = tempCtx.getImageData(0, 0, asciiWidth, asciiHeight);
-  let data = imageData.data; // Uint8ClampedArray
-
-  // Pre-processing (Grayscale, Contrast, Brightness)
-  const contrastFactor = (259 * (contrastValue + 255)) / (255 * (259 - contrastValue));
-  let grayBuffer = new Float32Array(asciiWidth * asciiHeight);
-
-  for (let i = 0; i < data.length; i += 4) {
-    let r = data[i];
-    let g = data[i + 1];
-    let b = data[i + 2];
-
-    let lum = 0.299 * r + 0.587 * g + 0.114 * b;
-    if (invertEnabled) lum = 255 - lum;
-
-    let adjusted = clamp(contrastFactor * (lum - 128) + 128 + brightness, 0, 255);
-    grayBuffer[i / 4] = adjusted;
-  }
-
-  // Edge Detection
-  let edgeMap = null;
-  if (edgeMethod === 'sobel') {
-    edgeMap = applySobel(grayBuffer, asciiWidth, asciiHeight, edgeThreshold);
-  } else if (edgeMethod === 'dog') {
-    // Simplified DoG: Blur difference (simulated)
-    // For performance, we'll just use a simple difference check or skip if too heavy
-    // Let's stick to Sobel for "Edge" and maybe just thresholding for "DoG" name for now
-    // Or implement a quick difference filter.
-    edgeMap = applySobel(grayBuffer, asciiWidth, asciiHeight, dogThreshold); // Reusing Sobel for now
-  }
-
-  // Dithering
-  if (ditheringEnabled) {
-    if (ditherAlgorithm === 'floyd') {
-      applyFloydSteinberg(grayBuffer, asciiWidth, asciiHeight);
-    } else if (ditherAlgorithm === 'noise') {
-      applyNoise(grayBuffer);
-    }
-    // Other algos can be added
-  }
-
-  // Rendering to Canvas
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, asciiCanvas.width, asciiCanvas.height);
-
-  ctx.font = `${fontHeight}px 'VT323', monospace`;
-  ctx.textBaseline = 'top';
-
-  // Charset Selection
-  let chars = "";
-  switch (charset) {
-    case 'standard': chars = "@%#*+=-:. "; break;
-    case 'blocks': chars = "█▓▒░ "; break;
-    case 'binary': chars = "101010 "; break;
-    case 'hex': chars = "0123456789ABCDEF "; break;
-    case 'matrix': chars = "ﾊﾐﾋｰｳｼﾅﾓﾆｻﾜﾂｵﾘｱﾎﾃﾏｹﾒｴｶｷﾑﾕﾗｾﾈｽﾀﾇﾍ "; break;
-    case 'glitch': chars = "¡¢£¤¥¦§¨©ª«¬®¯°±²³´µ¶·¸¹º»¼½¾¿ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖ×ØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõö÷øùúûüýþÿ"; break;
-    case 'manual':
-      chars = document.getElementById('manualCharInput').value || "0";
-      break;
-    case 'detailed':
-    default: chars = "$@B%8&WM#*oahkbdpqwmZO0QLCJUYXzcvunxrjft/\\|()1{}[]?-_+~<>i!lI;:,\"^`'. "; break;
-  }
-
-  const charLen = chars.length;
-
-  // Color Setup
-  let primaryColor = getComputedStyle(document.body).getPropertyValue('--primary-color').trim();
-
-  for (let y = 0; y < asciiHeight; y++) {
-    for (let x = 0; x < asciiWidth; x++) {
-      const idx = y * asciiWidth + x;
-      let val = grayBuffer[idx];
-
-      // Edge Override
-      if (edgeMap && edgeMap[idx] > 0) {
-        val = 0;
-      }
-
-      if (ignoreWhite && val > 250) continue;
-
-      // Map value to char index
-      // val is 0-255.
-      let charIdx = Math.floor((val / 255) * (charLen - 1));
-
-      // Manual Input Cycling
-      if (charset === 'manual') {
-        charIdx = (x + y) % charLen;
-      }
-
-      const char = chars[charIdx];
-
-      // Color
-      if (colorMode === 'true') {
-        const r = data[idx * 4];
-        const g = data[idx * 4 + 1];
-        const b = data[idx * 4 + 2];
-        ctx.fillStyle = `rgb(${r},${g},${b})`;
-      } else if (colorMode === 'rainbow') {
-        const hue = (x / asciiWidth) * 360 + (Date.now() / 20);
-        ctx.fillStyle = `hsl(${hue}, 100%, 50%)`;
-      } else {
-        ctx.fillStyle = primaryColor;
-      }
-
-      ctx.fillText(char, x * fontWidth, y * fontHeight);
-    }
-  }
-}
-
-// Algorithms
-function applySobel(buffer, width, height, threshold) {
-  const edgeMap = new Uint8Array(width * height);
-  const kernelX = [[-1, 0, 1], [-2, 0, 2], [-1, 0, 1]];
-  const kernelY = [[-1, -2, -1], [0, 0, 0], [1, 2, 1]];
-
-  for (let y = 1; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      let gx = 0;
-      let gy = 0;
-
-      for (let ky = -1; ky <= 1; ky++) {
-        for (let kx = -1; kx <= 1; kx++) {
-          const idx = (y + ky) * width + (x + kx);
-          const val = buffer[idx];
-          gx += val * kernelX[ky + 1][kx + 1];
-          gy += val * kernelY[ky + 1][kx + 1];
-        }
-      }
-
-      const magnitude = Math.sqrt(gx * gx + gy * gy);
-      if (magnitude > threshold) {
-        edgeMap[y * width + x] = 255; // Edge detected
-      }
-    }
-  }
-  return edgeMap;
-}
-
-function applyFloydSteinberg(buffer, width, height) {
-  for (let y = 0; y < height - 1; y++) {
-    for (let x = 1; x < width - 1; x++) {
-      const idx = y * width + x;
-      const oldVal = buffer[idx];
-      // Quantize to closest level
-      const steps = 8;
-      const newVal = Math.round(oldVal / 255 * steps) * (255 / steps);
-      buffer[idx] = newVal;
-      const error = oldVal - newVal;
-
-      buffer[idx + 1] += error * 7 / 16;
-      buffer[(y + 1) * width + x - 1] += error * 3 / 16;
-      buffer[(y + 1) * width + x] += error * 5 / 16;
-      buffer[(y + 1) * width + x + 1] += error * 1 / 16;
-    }
-  }
-}
-
-function applyNoise(buffer) {
-  for (let i = 0; i < buffer.length; i++) {
-    buffer[i] = clamp(buffer[i] + (Math.random() - 0.5) * 50, 0, 255);
-  }
-}
-
 // Gallery Functions
 function snapImage() {
   const canvas = document.getElementById('ascii-canvas');
-  // Save as image data URL
   const dataURL = canvas.toDataURL('image/png');
   const timestamp = new Date().toLocaleString();
   const id = Date.now();
@@ -291,14 +115,23 @@ function loadGallery() {
 
 function renderGallery() {
   const grid = document.getElementById('galleryGrid');
+  const stats = document.getElementById('memoryStats');
   grid.innerHTML = "";
 
+  let totalBytes = 0;
+
   galleryData.forEach(snap => {
+    // Calculate size (rough estimation for base64 string)
+    const sizeBytes = snap.image.length;
+    totalBytes += sizeBytes;
+    const sizeKB = (sizeBytes / 1024).toFixed(1);
+
     const div = document.createElement('div');
     div.className = 'gallery-item';
     div.innerHTML = `
       <img src="${snap.image}" style="width: 100%; border: 1px solid #0f0;">
       <div style="font-size: 0.8em; margin-bottom: 5px;">${snap.timestamp}</div>
+      <div style="font-size: 0.7em; color: #888; margin-bottom: 5px;">SIZE: ${sizeKB} KB</div>
       <div class="gallery-actions">
         <button onclick="downloadSnap(${snap.id})">SAVE</button>
         <button onclick="deleteSnap(${snap.id})">DEL</button>
@@ -306,6 +139,14 @@ function renderGallery() {
     `;
     grid.appendChild(div);
   });
+
+  const totalKB = (totalBytes / 1024).toFixed(1);
+  const totalMB = (totalBytes / (1024 * 1024)).toFixed(2);
+  // LocalStorage limit 5MB (5120KB)
+  const limitKB = 5120;
+  const percent = Math.min(100, (totalBytes / (limitKB * 1024)) * 100).toFixed(1);
+
+  stats.innerHTML = `USAGE: ${totalKB}KB / 5MB (${percent}%)`;
 }
 
 function deleteSnap(id) {
@@ -327,6 +168,7 @@ window.deleteSnap = deleteSnap;
 window.downloadSnap = downloadSnap;
 
 // Event Listeners
+
 document.getElementById('snapBtn').addEventListener('click', snapImage);
 
 const galleryModal = document.getElementById('galleryModal');
