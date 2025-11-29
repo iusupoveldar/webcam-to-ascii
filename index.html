@@ -94,13 +94,14 @@
         <div class="control">
           <label for="charset">Select Set:</label>
           <select id="charset">
-            <option value="detailed" selected>High Detail</option>
-            <option value="standard">Standard</option>
+            <option value="matrix" selected>Matrix Rain</option>
+            <option value="glitch">Glitch Noise</option>
+            <option value="runes">Eldritch Runes</option>
+            <option value="arrows">Vector Arrows</option>
+            <option value="circuit">Circuitry</option>
             <option value="blocks">Block Elements</option>
             <option value="binary">Binary Stream</option>
             <option value="hex">Hex Dump</option>
-            <option value="matrix">Matrix Rain</option>
-            <option value="glitch">Glitch Noise</option>
             <option value="manual">Manual Input</option>
           </select>
         </div>
@@ -170,11 +171,12 @@
     </main>
   </div>
 
-  <!-- Gallery -->
+  <!-- Gallery Modal -->
   <div id="galleryModal" class="modal">
     <div class="modal-content">
       <div class="modal-header">
         <h2>MEMORY BANK</h2>
+        <div id="memoryStats" style="font-size: 0.6em; color: var(--secondary-color); align-self: center;"></div>
         <span class="close-modal">&times;</span>
       </div>
       <div class="gallery-grid" id="galleryGrid">
@@ -185,7 +187,7 @@
 
   <!-- Hidden canvas -->
   <canvas id="canvas" style="display: none;"></canvas>
-  <script src="main.js"></script>
+  <script type="module" src="main.js"></script>
 </body>
 
 </html>
