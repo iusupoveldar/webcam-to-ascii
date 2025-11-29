@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 use wasm_bindgen::{Clamped, JsCast};
-use web_sys::{CanvasRenderingContext2d, ImageData};
+use web_sys::{CanvasRenderingContext2d};
 
 #[wasm_bindgen]
 extern "C" {

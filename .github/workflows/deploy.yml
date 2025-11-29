@@ -28,6 +28,7 @@ jobs:
 
       - name: Prepare Dist
         run: |
+          rm -f pkg/.gitignore
           mkdir dist
           cp index.html dist/
           cp style.css dist/
