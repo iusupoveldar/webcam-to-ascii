@@ -1,0 +1,15 @@
+{
+  "name": "webcam-to-ascii",
+  "type": "module",
+  "version": "0.1.0",
+  "files": [
+    "webcam_to_ascii_bg.wasm",
+    "webcam_to_ascii.js",
+    "webcam_to_ascii.d.ts"
+  ],
+  "main": "webcam_to_ascii.js",
+  "types": "webcam_to_ascii.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
